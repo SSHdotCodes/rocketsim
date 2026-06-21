@@ -99,6 +99,7 @@ public:
     Vec2 pos{0,0}, vel{0,0};
     double heading = PI/2, angVel = 0;
     double throttle = 1.0;
+    double soundVolume = 0.35;
     bool sas = true;
     bool enginesEnabled = true;       // master cutoff for throttleable (liquid) engines
     bool draggingThrottle = false;
@@ -138,6 +139,7 @@ public:
         for (int i = 0; i < 440; i++)
             stars.push_back({(float)frand(0,2400), (float)frand(0,2400), (float)frand(0.25,1.0)});
         loadEconomy();
+        loadAudioPrefs();
         loadStockRocket();
     }
 
@@ -178,6 +180,25 @@ public:
         closestApproach=closestApproachTime=0; transferParent=0;
     }
     void reward(int amt, const std::string& why){ money+=amt; saveEconomy(); setToast("+"+std::to_string(amt)+" AB - "+why); }
+    void loadAudioPrefs(){
+        soundVolume = EM_ASM_DOUBLE({
+            var s = localStorage.getItem('rs_sound_volume');
+            var v = s === null ? 0.35 : parseFloat(s);
+            return isFinite(v) ? v : 0.35;
+        });
+        soundVolume = clampd(soundVolume, 0, 1);
+    }
+    void saveAudioPrefs(){
+        EM_ASM({ try{ localStorage.setItem('rs_sound_volume', String($0)); }catch(e){} }, soundVolume);
+    }
+    void cycleSoundVolume(){
+        const double levels[5] = {0.0, 0.25, 0.5, 0.75, 1.0};
+        int next = 0;
+        for (int i=0;i<5;i++) if (soundVolume < levels[i] - 0.02) { next=i; break; }
+        soundVolume = levels[next];
+        saveAudioPrefs();
+        setToast(soundVolume <= 0.01 ? "Sound off" : "Sound volume "+std::to_string((int)(soundVolume*100+0.5))+"%");
+    }
     void checkMilestones(){
         if (exploded) return;
         const Body& B = world.bodies[domBody];

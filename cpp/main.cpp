@@ -111,11 +111,11 @@ static void tick() {
             B.name.c_str(), gGame.landed ? 1 : 0, gGame.exploded ? 1 : 0,
             gGame.currentStage, gGame.nStages, fuel, gGame.warps[gGame.warpIdx], pitch, srb, progradeErr, gGame.reentryHeat);
         EM_ASM({ if (window.__rs) window.__rs.target = $0; }, gGame.targetBody);
-        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate($0, $1, $2, $3, $4); },
-            engineLevel, gGame.reentryHeat, gGame.exploded ? 1 : 0, gGame.landed ? 1 : 0, gGame.mode == MODE_FLIGHT ? 1 : 0);
+        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate($0, $1, $2, $3, $4, $5); },
+            engineLevel, gGame.reentryHeat, gGame.exploded ? 1 : 0, gGame.landed ? 1 : 0, gGame.mode == MODE_FLIGHT ? 1 : 0, gGame.soundVolume);
     } else {
         EM_ASM({ window.__rs = ({ mode:0, target:$0 }); }, gGame.targetBody);
-        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate(0, 0, 0, 0, 0); });
+        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate(0, 0, 0, 0, 0, $0); }, gGame.soundVolume);
     }
 
     // consume one-frame edge inputs

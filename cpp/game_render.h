@@ -313,13 +313,14 @@ inline void drawBodies(Game& g, Vec2 cam, double scale){
 
 inline void drawRocketFlight(Game& g){
     auto tf=[&](Vec2 lr){ return w2s(g,g.l2w(lr),g.flightCam,g.flightScale); };
+    bool showFx = !g.showSettings;
     // draw radial parts first (behind), then core
     for (int pass=0;pass<2;pass++)
         for (auto& p : g.parts){ if(!p.alive) continue; const PartSpec& s=spec(p.type);
             bool radial=Game::isRadialPart(p.type);
             if ((pass==0)!=radial) continue;
             bool firing = (p.engineOn) && ((s.isSRB&&p.srbFuel>0)||(s.isEngine&&p.section<g.nSections&&g.sectionFuel[p.section]>0&&g.throttle>0.02));
-            drawPart(g,p.type,p.local,tf,g.flightScale,firing,s.isLeg&&g.legsDeployed);
+            drawPart(g,p.type,p.local,tf,g.flightScale,showFx&&firing,s.isLeg&&g.legsDeployed);
         }
     drawFlightInterstageShrouds(g, tf);
     // deployed parachute canopy
@@ -458,6 +459,8 @@ inline void drawHUD(Game& g){
         bool srb=false; for(auto&p:g.parts) if(p.alive&&spec(p.type).isSRB&&p.srbFuel>0&&p.engineOn) srb=true;
         g.setToast(g.enginesEnabled?"Engines on":(srb?"Engines cut (boosters keep firing)":"Engines cut"));
     }
+    std::string volLabel = g.soundVolume <= 0.01 ? "SOUND OFF" : "VOL "+fmt(g.soundVolume*100,0)+"%";
+    if (button(g, sx+sw+124, sy-3, 92, sh+6, volLabel, g.soundVolume>0.01, 1.0f)) g.cycleSoundVolume();
     by = sy+sh+12;
     for (int s=g.nSections-1;s>=0;s--){
         if (g.sectionFuelMax[s]<=0) continue;
@@ -485,7 +488,7 @@ inline void drawHUD(Game& g){
     r->textC("x"+fmt(g.warps[g.warpIdx],0), ux+uw/2, 74, 1.3, g.warpIdx>0?rgb(0x9fd2ff):rgb(0xd6dde6));
     if (button(g, ux+uw-30, 68, 30, 22, ">>")) g.warpUp();
     if (button(g, ux, 96, uw, 24, g.mapView?"CLOSE MAP":"MAP VIEW", g.mapView)) g.mapView=!g.mapView;
-    if (button(g, ux, 124, uw, 24, "MENU / SETTINGS", g.showSettings)) g.showSettings=!g.showSettings;
+    if (button(g, ux, 124, uw, 24, "SETTINGS/HELP", g.showSettings, 1.1f)) g.showSettings=!g.showSettings;
     if (button(g, ux, 152, 86, 24, g.sas?"SAS ON":"SAS OFF", g.sas)) g.sas=!g.sas;
     r->text("NEXT: "+stageShort(g.currentStage), ux+92, 158, 1.0, rgb(0x9fb0c4));
 
@@ -512,29 +515,29 @@ inline void drawHUD(Game& g){
 inline void drawSettings(Game& g){
     Renderer* r=g.r;
     r->rect(0,0,r->W,r->H, rgb(0x05080d).withA(0.55f));
-    float pw=440, ph=312, ox=r->W/2-pw/2, oy=r->H/2-ph/2;
+    float pw=540, ph=360, ox=r->W/2-pw/2, oy=r->H/2-ph/2;
     r->rectRound(ox,oy,pw,ph,10, rgb(0x0c121b).withA(0.98f));
     r->text("SETTINGS", ox+22, oy+18, 1.9, rgb(0x9fd2ff));
     float y=oy+52;
     auto toggle=[&](const std::string& label, bool& val){
-        r->text(label, ox+24, y+7, 1.3, rgb(0xc6cfda));
-        if (button(g, ox+pw-104, y, 80, 26, val?"ON":"OFF", val)) val=!val;
+        r->text(label, ox+24, y+7, 1.2, rgb(0xc6cfda));
+        if (button(g, ox+pw-112, y, 88, 26, val?"ON":"OFF", val)) val=!val;
         y+=36;
     };
     toggle("Minimap", g.showMinimap);
     toggle("Orbit trajectory overlay", g.showTrajectory);
     toggle("Engine & explosion particles", g.showParticles);
     toggle("SAS stability assist", g.sas);
-    r->text("CONTROLS", ox+24, y+2, 1.0, rgb(0x6b7888)); y+=17;
+    r->text("CONTROLS", ox+24, y+4, 1.0, rgb(0x6b7888)); y+=20;
     const char* c[]={
         "A / D  steer        Shift / Ctrl  throttle",
         "Z / X  full / cut throttle      Space  stage",
         "M  map     T  SAS     P  deploy / cut parachute",
         ", / .  time warp        R  revert to hangar",
         "On the map, click a moon/planet to plan a transfer."};
-    for (int i=0;i<5;i++){ r->text(c[i], ox+24, y, 1.0, rgb(0x9fb0c4)); y+=15; }
-    if (button(g, ox+24, oy+ph-44, 170, 32, "RETURN TO HANGAR")){ g.mode=MODE_BUILD; g.showSettings=false; g.mapView=false; g.clearNavigation(); g.setToast("Reverted to hangar"); }
-    if (button(g, ox+pw-104, oy+ph-44, 80, 32, "RESUME", true)) g.showSettings=false;
+    for (int i=0;i<5;i++){ r->text(c[i], ox+24, y, 1.0, rgb(0x9fb0c4)); y+=17; }
+    if (button(g, ox+24, oy+ph-46, 178, 32, "RETURN TO HANGAR")){ g.mode=MODE_BUILD; g.showSettings=false; g.mapView=false; g.clearNavigation(); g.setToast("Reverted to hangar"); }
+    if (button(g, ox+pw-108, oy+ph-46, 84, 32, "RESUME", true)) g.showSettings=false;
 }
 
 inline void drawMap(Game& g){
@@ -879,9 +882,9 @@ inline void render(Game& g){
     drawStars(g, 1.0f-dayf*0.9f);
     drawBodies(g, g.flightCam, g.flightScale);
     // faint orbit overlay in the world view
-    if (g.showTrajectory) drawTrajectorySegments(g, g.flightCam, g.flightScale, 1.5f, rgb(0x59d6ff).withA(0.4f));
-    if (g.showParticles) drawParticles(g, g.flightCam, g.flightScale);
-    drawReentryPlasma(g);
+    if (g.showTrajectory && !g.showSettings) drawTrajectorySegments(g, g.flightCam, g.flightScale, 1.5f, rgb(0x59d6ff).withA(0.4f));
+    if (g.showParticles && !g.showSettings) drawParticles(g, g.flightCam, g.flightScale);
+    if (!g.showSettings) drawReentryPlasma(g);
     if (!g.exploded) drawRocketFlight(g);
     drawHUD(g);
     if (g.showSettings) drawSettings(g);
