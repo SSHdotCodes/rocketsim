@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>RocketSim — orbital flight in your browser</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#05080d;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#dfe6ee}
+  #canvas{display:block;width:100vw;height:100vh;touch-action:none;outline:none}
+  #loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;background:radial-gradient(circle at 50% 35%,#11253f,#05080d 70%);
+    transition:opacity .6s ease;z-index:10}
+  #loader h1{margin:0;font-size:40px;letter-spacing:6px;font-weight:800;
+    background:linear-gradient(90deg,#7fd0ff,#9affc8);-webkit-background-clip:text;
+    background-clip:text;color:transparent}
+  #loader p{margin:0;color:#6b7888;font-size:14px;letter-spacing:2px}
+  .bar{width:240px;height:5px;border-radius:3px;background:#16202c;overflow:hidden}
+  .bar > i{display:block;height:100%;width:35%;border-radius:3px;
+    background:linear-gradient(90deg,#2f7fd6,#39c06a);animation:slide 1.1s ease-in-out infinite}
+  @keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="loader">
+  <h1>ROCKETSIM</h1>
+  <p>IGNITION SEQUENCE</p>
+  <div class="bar"><i></i></div>
+</div>
+<script>
+  // Build version (substituted by build.sh) busts CDN/browser caches so the JS
+  // and WASM always match — they share an EM_ASM index table and a mismatch is fatal.
+  var BUILD_V = '__BUILD_V__';
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    locateFile: function (path, prefix) { return prefix + path + '?v=' + BUILD_V; },
+    print: function (t){ console.log(t); },
+    printErr: function (t){ console.warn(t); },
+    onRuntimeInitialized: function (){
+      var l = document.getElementById('loader');
+      if (l){ l.style.opacity = 0; setTimeout(function(){ l.remove(); }, 650); }
+      document.getElementById('canvas').focus();
+    }
+  };
+  window.addEventListener('load', function(){ document.getElementById('canvas').focus(); });
+</script>
+<script src="rocketsim.js?v=__BUILD_V__"></script>
+</body>
+</html>
