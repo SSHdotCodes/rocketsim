@@ -34,7 +34,8 @@
   var BUILD_V = '__BUILD_V__';
 
   (function(){
-    var ctx, master, engineGain, engineLow, engineOscA, engineOscB, reentryGain, reentryFilter, reentryWhistle, reentryWhistleGain;
+    var ctx, master, engineGain, engineLow, engineRoar, engineCrackle, engineCrackleGain;
+    var engineSub, enginePulse, reentryGain, reentryFilter, reentryWhistle, reentryWhistleGain;
     var lastExploded = 0;
     var unlocked = false;
 
@@ -46,6 +47,16 @@
       return buf;
     }
 
+    function makeDriveCurve(amount) {
+      var n = 2048;
+      var curve = new Float32Array(n);
+      for (var i = 0; i < n; i++) {
+        var x = i * 2 / n - 1;
+        curve[i] = (1 + amount) * x / (1 + amount * Math.abs(x));
+      }
+      return curve;
+    }
+
     function initAudio() {
       if (ctx) return true;
       var AC = window.AudioContext || window.webkitAudioContext;
@@ -53,42 +64,77 @@
       ctx = new AC();
 
       master = ctx.createGain();
-      master.gain.value = 0.55;
-      master.connect(ctx.destination);
+      master.gain.value = 0.78;
+      var compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 6;
+      compressor.attack.value = 0.008;
+      compressor.release.value = 0.18;
+      master.connect(compressor).connect(ctx.destination);
 
       engineGain = ctx.createGain();
       engineGain.gain.value = 0;
+      var engineDrive = ctx.createWaveShaper();
+      engineDrive.curve = makeDriveCurve(7);
+      engineDrive.oversample = '2x';
+      engineDrive.connect(engineGain);
+
       engineLow = ctx.createBiquadFilter();
       engineLow.type = 'lowpass';
-      engineLow.frequency.value = 280;
-      engineLow.Q.value = 0.9;
-      engineLow.connect(engineGain);
+      engineLow.frequency.value = 460;
+      engineLow.Q.value = 0.75;
+      engineLow.connect(engineDrive);
 
       var engineNoise = ctx.createBufferSource();
       engineNoise.buffer = makeNoise(2);
       engineNoise.loop = true;
       var engineNoiseGain = ctx.createGain();
-      engineNoiseGain.gain.value = 0.46;
+      engineNoiseGain.gain.value = 1.0;
       engineNoise.connect(engineNoiseGain).connect(engineLow);
 
-      engineOscA = ctx.createOscillator();
-      engineOscA.type = 'sawtooth';
-      engineOscA.frequency.value = 42;
-      var engineOscAGain = ctx.createGain();
-      engineOscAGain.gain.value = 0.18;
-      engineOscA.connect(engineOscAGain).connect(engineGain);
+      var roarNoise = ctx.createBufferSource();
+      roarNoise.buffer = makeNoise(1.5);
+      roarNoise.loop = true;
+      engineRoar = ctx.createBiquadFilter();
+      engineRoar.type = 'bandpass';
+      engineRoar.frequency.value = 1200;
+      engineRoar.Q.value = 0.55;
+      var roarGain = ctx.createGain();
+      roarGain.gain.value = 0.82;
+      roarNoise.connect(engineRoar).connect(roarGain).connect(engineDrive);
 
-      engineOscB = ctx.createOscillator();
-      engineOscB.type = 'triangle';
-      engineOscB.frequency.value = 84;
-      var engineOscBGain = ctx.createGain();
-      engineOscBGain.gain.value = 0.10;
-      engineOscB.connect(engineOscBGain).connect(engineGain);
+      var crackleNoise = ctx.createBufferSource();
+      crackleNoise.buffer = makeNoise(0.35);
+      crackleNoise.loop = true;
+      engineCrackle = ctx.createBiquadFilter();
+      engineCrackle.type = 'highpass';
+      engineCrackle.frequency.value = 2200;
+      engineCrackle.Q.value = 0.45;
+      engineCrackleGain = ctx.createGain();
+      engineCrackleGain.gain.value = 0;
+      crackleNoise.connect(engineCrackle).connect(engineCrackleGain).connect(engineDrive);
+
+      engineSub = ctx.createOscillator();
+      engineSub.type = 'sawtooth';
+      engineSub.frequency.value = 28;
+      var engineSubGain = ctx.createGain();
+      engineSubGain.gain.value = 0.24;
+      engineSub.connect(engineSubGain).connect(engineDrive);
+
+      enginePulse = ctx.createOscillator();
+      enginePulse.type = 'triangle';
+      enginePulse.frequency.value = 58;
+      var enginePulseGain = ctx.createGain();
+      enginePulseGain.gain.value = 0.15;
+      enginePulse.connect(enginePulseGain).connect(engineDrive);
 
       engineGain.connect(master);
       engineNoise.start();
-      engineOscA.start();
-      engineOscB.start();
+      roarNoise.start();
+      crackleNoise.start();
+      engineSub.start();
+      enginePulse.start();
 
       reentryGain = ctx.createGain();
       reentryGain.gain.value = 0;
@@ -157,13 +203,17 @@
       var t = ctx.currentTime;
       engine = Math.max(0, Math.min(1, engine || 0));
       reentry = Math.max(0, Math.min(1, reentry || 0));
-      var engineTarget = flight && !landed && !exploded ? engine : 0;
+      var engineTarget = flight && !landed && !exploded ? Math.pow(engine, 0.65) : 0;
       var reentryTarget = flight && !landed && !exploded ? reentry : 0;
+      var flutter = 0.92 + Math.sin(t * 41) * 0.05 + Math.sin(t * 97) * 0.03;
 
-      engineGain.gain.setTargetAtTime(engineTarget * 0.52, t, 0.08);
-      engineLow.frequency.setTargetAtTime(220 + engineTarget * 560, t, 0.12);
-      engineOscA.frequency.setTargetAtTime(34 + engineTarget * 32, t, 0.1);
-      engineOscB.frequency.setTargetAtTime(76 + engineTarget * 54, t, 0.1);
+      engineGain.gain.setTargetAtTime(engineTarget * flutter * 0.78, t, 0.18);
+      engineLow.frequency.setTargetAtTime(300 + engineTarget * 650, t, 0.18);
+      engineRoar.frequency.setTargetAtTime(820 + engineTarget * 1700, t, 0.12);
+      engineCrackle.frequency.setTargetAtTime(1800 + engineTarget * 2800, t, 0.08);
+      engineCrackleGain.gain.setTargetAtTime(engineTarget * engineTarget * 0.22, t, 0.05);
+      engineSub.frequency.setTargetAtTime(24 + engineTarget * 20, t, 0.18);
+      enginePulse.frequency.setTargetAtTime(48 + engineTarget * 40, t, 0.14);
 
       reentryGain.gain.setTargetAtTime(reentryTarget * 0.46, t, 0.16);
       reentryFilter.frequency.setTargetAtTime(650 + reentryTarget * 1800, t, 0.15);
