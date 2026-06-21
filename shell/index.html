@@ -32,6 +32,153 @@
   // Build version (substituted by build.sh) busts CDN/browser caches so the JS
   // and WASM always match — they share an EM_ASM index table and a mismatch is fatal.
   var BUILD_V = '__BUILD_V__';
+
+  (function(){
+    var ctx, master, engineGain, engineLow, engineOscA, engineOscB, reentryGain, reentryFilter, reentryWhistle, reentryWhistleGain;
+    var lastExploded = 0;
+    var unlocked = false;
+
+    function makeNoise(seconds) {
+      var len = Math.max(1, Math.floor((ctx ? ctx.sampleRate : 44100) * seconds));
+      var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      return buf;
+    }
+
+    function initAudio() {
+      if (ctx) return true;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      ctx = new AC();
+
+      master = ctx.createGain();
+      master.gain.value = 0.55;
+      master.connect(ctx.destination);
+
+      engineGain = ctx.createGain();
+      engineGain.gain.value = 0;
+      engineLow = ctx.createBiquadFilter();
+      engineLow.type = 'lowpass';
+      engineLow.frequency.value = 280;
+      engineLow.Q.value = 0.9;
+      engineLow.connect(engineGain);
+
+      var engineNoise = ctx.createBufferSource();
+      engineNoise.buffer = makeNoise(2);
+      engineNoise.loop = true;
+      var engineNoiseGain = ctx.createGain();
+      engineNoiseGain.gain.value = 0.46;
+      engineNoise.connect(engineNoiseGain).connect(engineLow);
+
+      engineOscA = ctx.createOscillator();
+      engineOscA.type = 'sawtooth';
+      engineOscA.frequency.value = 42;
+      var engineOscAGain = ctx.createGain();
+      engineOscAGain.gain.value = 0.18;
+      engineOscA.connect(engineOscAGain).connect(engineGain);
+
+      engineOscB = ctx.createOscillator();
+      engineOscB.type = 'triangle';
+      engineOscB.frequency.value = 84;
+      var engineOscBGain = ctx.createGain();
+      engineOscBGain.gain.value = 0.10;
+      engineOscB.connect(engineOscBGain).connect(engineGain);
+
+      engineGain.connect(master);
+      engineNoise.start();
+      engineOscA.start();
+      engineOscB.start();
+
+      reentryGain = ctx.createGain();
+      reentryGain.gain.value = 0;
+      reentryFilter = ctx.createBiquadFilter();
+      reentryFilter.type = 'bandpass';
+      reentryFilter.frequency.value = 1100;
+      reentryFilter.Q.value = 1.8;
+      var reentryNoise = ctx.createBufferSource();
+      reentryNoise.buffer = makeNoise(2);
+      reentryNoise.loop = true;
+      reentryNoise.connect(reentryFilter).connect(reentryGain);
+
+      reentryWhistle = ctx.createOscillator();
+      reentryWhistle.type = 'sine';
+      reentryWhistle.frequency.value = 680;
+      reentryWhistleGain = ctx.createGain();
+      reentryWhistleGain.gain.value = 0;
+      reentryWhistle.connect(reentryWhistleGain).connect(reentryGain);
+
+      reentryGain.connect(master);
+      reentryNoise.start();
+      reentryWhistle.start();
+      return true;
+    }
+
+    function unlockAudio() {
+      unlocked = true;
+      if (initAudio() && ctx.state !== 'running') ctx.resume();
+    }
+
+    function oneShotCrash() {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var boom = ctx.createBufferSource();
+      boom.buffer = makeNoise(1.4);
+      var boomFilter = ctx.createBiquadFilter();
+      boomFilter.type = 'lowpass';
+      boomFilter.frequency.setValueAtTime(1500, t);
+      boomFilter.frequency.exponentialRampToValueAtTime(90, t + 1.05);
+      var boomGain = ctx.createGain();
+      boomGain.gain.setValueAtTime(0.001, t);
+      boomGain.gain.exponentialRampToValueAtTime(0.95, t + 0.035);
+      boomGain.gain.exponentialRampToValueAtTime(0.001, t + 1.25);
+      boom.connect(boomFilter).connect(boomGain).connect(master);
+      boom.start(t);
+      boom.stop(t + 1.35);
+
+      var thump = ctx.createOscillator();
+      thump.type = 'triangle';
+      thump.frequency.setValueAtTime(72, t);
+      thump.frequency.exponentialRampToValueAtTime(31, t + 0.5);
+      var thumpGain = ctx.createGain();
+      thumpGain.gain.setValueAtTime(0.001, t);
+      thumpGain.gain.exponentialRampToValueAtTime(0.75, t + 0.02);
+      thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+      thump.connect(thumpGain).connect(master);
+      thump.start(t);
+      thump.stop(t + 0.8);
+    }
+
+    window.__rsAudioUpdate = function(engine, reentry, exploded, landed, flight) {
+      if (!unlocked || !initAudio()) {
+        lastExploded = exploded ? 1 : 0;
+        return;
+      }
+      var t = ctx.currentTime;
+      engine = Math.max(0, Math.min(1, engine || 0));
+      reentry = Math.max(0, Math.min(1, reentry || 0));
+      var engineTarget = flight && !landed && !exploded ? engine : 0;
+      var reentryTarget = flight && !landed && !exploded ? reentry : 0;
+
+      engineGain.gain.setTargetAtTime(engineTarget * 0.52, t, 0.08);
+      engineLow.frequency.setTargetAtTime(220 + engineTarget * 560, t, 0.12);
+      engineOscA.frequency.setTargetAtTime(34 + engineTarget * 32, t, 0.1);
+      engineOscB.frequency.setTargetAtTime(76 + engineTarget * 54, t, 0.1);
+
+      reentryGain.gain.setTargetAtTime(reentryTarget * 0.46, t, 0.16);
+      reentryFilter.frequency.setTargetAtTime(650 + reentryTarget * 1800, t, 0.15);
+      reentryWhistle.frequency.setTargetAtTime(420 + reentryTarget * 950, t, 0.18);
+      reentryWhistleGain.gain.setTargetAtTime(reentryTarget * reentryTarget * 0.12, t, 0.12);
+
+      if (exploded && !lastExploded) oneShotCrash();
+      lastExploded = exploded ? 1 : 0;
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { passive:true });
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio, { passive:true });
+  })();
+
   var Module = {
     canvas: document.getElementById('canvas'),
     locateFile: function (path, prefix) { return prefix + path + '?v=' + BUILD_V; },

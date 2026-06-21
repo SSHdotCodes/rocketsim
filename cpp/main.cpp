@@ -95,6 +95,15 @@ static void tick() {
         Vec2 vd = vrel.len() > 1 ? vrel.norm() : nose;
         double progradeErr = std::atan2(nose.cross(vd), nose.dot(vd)) * RAD2DEG; // signed nose->velocity
         double srb = 0; for (auto& p : gGame.parts) if (p.alive && spec(p.type).isSRB) srb += p.srbFuel;
+        double soundThrust = 0;
+        for (auto& p : gGame.parts) if (p.alive && p.engineOn) {
+            const PartSpec& s = spec(p.type);
+            if (s.isSRB && p.srbFuel > 0) soundThrust += s.thrust;
+            else if (s.isEngine && gGame.enginesEnabled && p.section < gGame.nSections &&
+                     gGame.sectionFuel[p.section] > 0 && gGame.throttle > 0.02)
+                soundThrust += s.thrust * gGame.throttle;
+        }
+        double engineLevel = clampd(1.0 - std::exp(-soundThrust / 700000.0), 0.0, 1.0);
         EM_ASM({ window.__rs = ({ mode:1, alt:$0, apo:$1, peri:$2, spd:$3, vspd:$4,
             body:UTF8ToString($5), landed:$6, exploded:$7, stage:$8, nstage:$9, fuel:$10, warp:$11,
             pitch:$12, srb:$13, progradeErr:$14, heat:$15 }); },
@@ -102,8 +111,11 @@ static void tick() {
             B.name.c_str(), gGame.landed ? 1 : 0, gGame.exploded ? 1 : 0,
             gGame.currentStage, gGame.nStages, fuel, gGame.warps[gGame.warpIdx], pitch, srb, progradeErr, gGame.reentryHeat);
         EM_ASM({ if (window.__rs) window.__rs.target = $0; }, gGame.targetBody);
+        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate($0, $1, $2, $3, $4); },
+            engineLevel, gGame.reentryHeat, gGame.exploded ? 1 : 0, gGame.landed ? 1 : 0, gGame.mode == MODE_FLIGHT ? 1 : 0);
     } else {
         EM_ASM({ window.__rs = ({ mode:0, target:$0 }); }, gGame.targetBody);
+        EM_ASM({ if (window.__rsAudioUpdate) window.__rsAudioUpdate(0, 0, 0, 0, 0); });
     }
 
     // consume one-frame edge inputs
